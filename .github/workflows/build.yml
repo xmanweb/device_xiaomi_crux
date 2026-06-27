@@ -1,11 +1,18 @@
 name: Build TWRP for Crux (Android 11.0)
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch: # 保持手动触发按钮，方便随时手动编译
+  push:
+    branches:
+      - android-11.0 # 当这个分支有代码推送时触发
+    paths-ignore:    # 忽略以下文件的变动，不触发编译
+      - 'README.md'
+      - '.gitignore'
+      - 'LICENSE'
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest # 使用最新系统避免排队
     permissions:
       contents: write
 
@@ -15,14 +22,20 @@ jobs:
 
     - name: Clean up disk space
       run: |
-        docker rmi $(docker images -q)
+        docker rmi $(docker images -q) || true
         sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
         sudo apt-get clean
+
+    # 锁定 Python 版本为 3.9，防止高版本 Ubuntu 的 Python 3.10+ 导致 Android 11 编译报错
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
 
     - name: Install Build Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y gperf gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc bison build-essential ccache curl flex g++ gcc git gnupg gperf libffi-dev libncurses5 libncurses5-dev libreadline-dev libssl-dev libxml2 lzop make pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 openjdk-11-jdk
+        sudo apt-get install -y gperf gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc bison build-essential ccache curl flex g++ gcc git gnupg gperf libffi-dev libncurses5 libncurses5-dev libreadline-dev libssl-dev libxml2 lzop make pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-11-jdk
 
     - name: Install Repo Tool
       run: |
@@ -38,7 +51,7 @@ jobs:
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         
-        # 使用修正后的 Minimal TWRP 11 仓库地址
+        # 使用 Minimal TWRP 11 仓库地址
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
         
         # 同步源码
@@ -47,7 +60,7 @@ jobs:
     - name: Clone Device Tree
       run: |
         cd ~/twrp
-        # 克隆你的设备树，分支指定为你的实际分支 android-11.0
+        # 克隆你的设备树，分支指定为 android-11.0
         git clone https://github.com/xmanweb/device_xiaomi_crux.git -b android-11.0 device/xiaomi/crux
 
     - name: Build Recovery Image
