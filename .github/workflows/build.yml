@@ -1,0 +1,68 @@
+name: Build TWRP for Crux (Android 11.0)
+
+on:
+  workflow_dispatch: # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Clean up disk space
+      run: |
+        docker rmi $(docker images -q)
+        sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
+        sudo apt-get clean
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gperf gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc bison build-essential ccache curl flex g++ gcc git gnupg gperf libffi-dev libncurses5 libncurses5-dev libreadline-dev libssl-dev libxml2 lzop make pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 openjdk-11-jdk
+
+    - name: Install Repo Tool
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        sudo ln -sf ~/bin/repo /usr/bin/repo
+
+    - name: Initialize Repo and Sync Source
+      run: |
+        mkdir ~/twrp
+        cd ~/twrp
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        
+        # 使用修正后的 Minimal TWRP 11 仓库地址
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
+        
+        # 同步源码
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+    - name: Clone Device Tree
+      run: |
+        cd ~/twrp
+        # 克隆你的设备树，分支指定为你的实际分支 android-11.0
+        git clone https://github.com/xmanweb/device_xiaomi_crux.git -b android-11.0 device/xiaomi/crux
+
+    - name: Build Recovery Image
+      run: |
+        cd ~/twrp
+        export ALLOW_MISSING_DEPENDENCIES=true
+        source build/envsetup.sh
+        
+        # 匹配你的 AndroidProducts.mk 中定义的 crux-eng
+        lunch crux-eng
+        
+        make recoveryimage -j$(nproc --all)
+
+    - name: Upload Recovery Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: TWRP-Crux-Android11.0
+        path: ~/twrp/out/target/product/crux/recovery.img
