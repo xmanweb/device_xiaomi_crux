@@ -61,8 +61,13 @@ jobs:
     - name: Clone Device Tree
       run: |
         cd ~/twrp
-        # 克隆你的设备树，分支指定为 android-11.0
-        git clone https://github.com/xmanweb/device_xiaomi_crux.git -b android-11.0 device/xiaomi/crux
+        # 1. 确保目标路径干净，防止嵌套
+        rm -rf device/xiaomi/crux
+        mkdir -p device/xiaomi/crux
+        
+        # 2. 将设备树内容直接克隆到目标目录中（注意后面的点 . 表示当前目录）
+        cd device/xiaomi/crux
+        git clone https://github.com/xmanweb/device_xiaomi_crux.git -b android-11.0 .
 
     - name: Build Recovery Image
       run: |
@@ -70,10 +75,19 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # 匹配你的 AndroidProducts.mk 中定义的 crux-eng
-        lunch crux-eng
+        # 3. 规避文件命名不一致的补丁：
+        # 如果你的仓库里实际叫 twrp_crux.mk 或 omni_crux.mk，而 AndroidProducts.mk 在找 crux.mk
+        # 我们直接在现场做一个软链接，确保 crux.mk 必然存在
+        cd device/xiaomi/crux
+        if [ ! -f "crux.mk" ]; then
+            ln -sf twrp_crux.mk crux.mk || ln -sf omni_crux.mk crux.mk || true
+        fi
+        cd ~/twrp
         
+        # 4. 执行编译
+        lunch crux-eng
         make recoveryimage -j$(nproc --all)
+        
 
     - name: Upload Recovery Image
       uses: actions/upload-artifact@v4
