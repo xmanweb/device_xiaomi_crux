@@ -75,18 +75,24 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # 3. 规避文件命名不一致的补丁：
-        # 如果你的仓库里实际叫 twrp_crux.mk 或 omni_crux.mk，而 AndroidProducts.mk 在找 crux.mk
-        # 我们直接在现场做一个软链接，确保 crux.mk 必然存在
+        # 1. 规避文件命名不一致的补丁
         cd device/xiaomi/crux
         if [ ! -f "crux.mk" ]; then
             ln -sf twrp_crux.mk crux.mk || ln -sf omni_crux.mk crux.mk || true
         fi
+        
+        # 2. 核心修复：注释掉找不到的 vendor/crux/config/common.mk 继承行
+        # 使用 sed 匹配包含 vendor/crux 的行，并在前面加上 # 注释掉
+        if [ -f "device.mk" ]; then
+            sed -i 's/.*vendor\/crux.*/# &/g' device.mk
+        fi
+        
         cd ~/twrp
         
-        # 4. 执行编译
+        # 3. 执行编译
         lunch crux-eng
         make recoveryimage -j$(nproc --all)
+
         
 
     - name: Upload Recovery Image
