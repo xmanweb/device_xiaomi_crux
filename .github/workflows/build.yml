@@ -81,17 +81,25 @@ jobs:
             ln -sf twrp_crux.mk crux.mk || ln -sf omni_crux.mk crux.mk || true
         fi
         
-        # 2. 核心修复：注释掉找不到的 vendor/crux/config/common.mk 继承行
-        # 使用 sed 匹配包含 vendor/crux 的行，并在前面加上 # 注释掉
-        if [ -f "device.mk" ]; then
-            sed -i 's/.*vendor\/crux.*/# &/g' device.mk
-        fi
+        # 2. 更加激进的清理：
+        # 方法 A：直接将第 30 行（报错行）前面加上 # 注释掉
+        sed -i '30s/^/#/' device.mk
+        
+        # 方法 B：地毯式清除，把所有包含 $(call inherit-product-if-exists, vendor/ 或 inherit-product 带有 vendor 的行全部抹除
+        sed -i '/vendor\/crux/d' device.mk
+        sed -i '/vendor\/lineage/d' device.mk
+        
+        # 打印出来确认一下修改结果，方便在 Action 日志里肉眼检查
+        echo "=== 检查修改后的 device.mk 第 25-35 行 ==="
+        sed -n '25,35p' device.mk
+        echo "========================================="
         
         cd ~/twrp
         
         # 3. 执行编译
         lunch crux-eng
         make recoveryimage -j$(nproc --all)
+
 
         
 
