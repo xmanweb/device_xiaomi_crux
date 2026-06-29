@@ -88,13 +88,20 @@ jobs:
         # 3. 强制重写 PRODUCT_NAME 为 crux，确保 lunch 精准匹配
         find . -name "*.mk" -exec sed -i 's/PRODUCT_NAME :=.*/PRODUCT_NAME := crux/g' {} +
         
-        # 4. 核心修复：为 Non-A/B 设备的 AVB 2.0 补齐默认签名密钥路径
-        # 注入到 BoardConfig.mk 的末尾
+        # 4. 核心修复：补齐完整的 AVB 签名及防回滚计数器
+        # 强制清空之前可能残留的注入，重新写入完整的 3 个必需参数
         if [ -f "BoardConfig.mk" ]; then
+            # 先清除可能存在的旧重复定义，防止多重定义报错
+            sed -i '/BOARD_AVB_RECOVERY_KEY_PATH/d' BoardConfig.mk
+            sed -i '/BOARD_AVB_RECOVERY_ALGORITHM/d' BoardConfig.mk
+            sed -i '/BOARD_AVB_RECOVERY_ROLLBACK_INDEX/d' BoardConfig.mk
+            
             echo "" >> BoardConfig.mk
-            echo "# 用于解决 Non-A/B 编译错误的 AVB 签名补丁" >> BoardConfig.mk
+            echo "# 用于解决 Non-A/B 编译错误的完整 AVB 签名补丁" >> BoardConfig.mk
             echo "BOARD_AVB_RECOVERY_KEY_PATH := external/avb/test/data/testkey_rsa4096.pem" >> BoardConfig.mk
             echo "BOARD_AVB_RECOVERY_ALGORITHM := SHA256_RSA4096" >> BoardConfig.mk
+            echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX := 0" >> BoardConfig.mk
+            echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
         fi
         
         cd ~/twrp
