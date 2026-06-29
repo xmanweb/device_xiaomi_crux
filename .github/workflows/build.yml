@@ -75,30 +75,30 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # 1. 规避文件命名不一致的补丁
+        # 1. 规范文件命名
         cd device/xiaomi/crux
         if [ ! -f "crux.mk" ]; then
             ln -sf twrp_crux.mk crux.mk || ln -sf omni_crux.mk crux.mk || true
         fi
         
-        # 2. 终极地毯式清理：
-        # 扫描当前目录下所有 .mk 文件，只要包含 "vendor/crux" 字段的行，通通强制整行删除
+        # 2. 地毯式清理 vendor 依赖
         find . -name "*.mk" -exec sed -i '/vendor\/crux/d' {} +
         find . -name "*.mk" -exec sed -i '/vendor\/lineage/d' {} +
         
-        # 3. 打印前 30 行进行最后的肉眼确认，确保没有漏网之鱼
-        echo "=== 检查 device.mk 前 30 行，确认 vendor 继承已被剔除 ==="
-        head -n 30 device.mk
-        echo "========================================================="
+        # 3. 核心修复：强制重写 PRODUCT_NAME 为 crux，确保 lunch 能精准匹配
+        # 无论是 crux.mk 还是其他关联的 mk，只要有 PRODUCT_NAME，强制改成 crux
+        find . -name "*.mk" -exec sed -i 's/PRODUCT_NAME :=.*/PRODUCT_NAME := crux/g' {} +
+        
+        # 4. 调试打印：看一下 crux.mk 里的关键产品属性定义，方便排错
+        echo "=== 检查 crux.mk 中关于 PRODUCT 的核心配置 ==="
+        grep -E "PRODUCT_NAME|PRODUCT_DEVICE" crux.mk || true
+        echo "================================================="
         
         cd ~/twrp
         
-        # 4. 执行编译
+        # 5. 执行编译
         lunch crux-eng
         make recoveryimage -j$(nproc --all)
-
-
-
         
 
     - name: Upload Recovery Image
