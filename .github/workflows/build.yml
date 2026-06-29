@@ -101,13 +101,16 @@ jobs:
             echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
         fi
         
-        # 5. 核心修复：切断 system/core/init 对缺失模块 libinit_crux 的强行依赖
+        # 5. 核心修复：在设备树根目录现场“手搓”一个虚拟的 libinit_crux 静态库，满足系统的依赖要求
+        # 我们直接向设备树的 Android.bp 追加一个空声明，这样系统核心编译时就能在这里“签到”成功
+        echo "" >> Android.bp
+        echo "cc_library_static {" >> Android.bp
+        echo "    name: \"libinit_crux\"," >> Android.bp
+        echo "    recovery_available: true," >> Android.bp
+        echo "    include_dirs: [\"system/core/init\"]," >> Android.bp
+        echo "}" >> Android.bp
+        
         cd ~/twrp
-        if [ -f "system/core/init/Android.bp" ]; then
-            # 使用 sed 直接剔除带有 libinit_ 小米定制模块的整行依赖声明
-            sed -i '/libinit_.*\.*/d' system/core/init/Android.bp
-            sed -i '/"libinit_.*"/d' system/core/init/Android.bp
-        fi
         
         # 6. 执行编译
         lunch crux-eng
