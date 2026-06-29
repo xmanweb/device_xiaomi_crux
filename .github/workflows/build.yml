@@ -101,12 +101,22 @@ jobs:
             echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
         fi
         
-        # 5. 核心修复：在设备树根目录现场“手搓”一个虚拟的 libinit_crux 静态库，满足系统的依赖要求
-        # 我们直接向设备树的 Android.bp 追加一个空声明，这样系统核心编译时就能在这里“签到”成功
-        echo "" >> Android.bp
+        # 5. 核心修复：现场为伪造的 libinit_crux 注入真正的 C++ 存根函数，彻底解决未定义符号问题
+        # A. 生成一个极简的本地 C++ 文件，提供空的 vendor_load_properties 实现
+        echo '#include <vector>' > twrp_init_stub.cpp
+        echo '#include <string>' >> twrp_init_stub.cpp
+        echo 'namespace android {' >> twrp_init_stub.cpp
+        echo 'namespace init {' >> twrp_init_stub.cpp
+        echo 'void vendor_load_properties() {}' >> twrp_init_stub.cpp
+        echo '}' >> twrp_init_stub.cpp
+        echo '}' >> twrp_init_stub.cpp
+        
+        # B. 重写设备树的 Android.bp，让其包含该 C++ 文件并编译进静态库
+        echo "" > Android.bp
         echo "cc_library_static {" >> Android.bp
         echo "    name: \"libinit_crux\"," >> Android.bp
         echo "    recovery_available: true," >> Android.bp
+        echo "    srcs: [\"twrp_init_stub.cpp\"]," >> Android.bp
         echo "    include_dirs: [\"system/core/init\"]," >> Android.bp
         echo "}" >> Android.bp
         
