@@ -101,11 +101,13 @@ jobs:
             echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
         fi
         
-        # 5. 核心修复：用 extern "C" 导出存根函数，防止 C++ 名字修饰导致链接失败
+        # 5. 核心修复：将存根函数精准嵌入 android::init 命名空间，完美契合系统调用
         echo '#include <vector>' > twrp_init_stub.cpp
         echo '#include <string>' >> twrp_init_stub.cpp
-        echo 'extern "C" {' >> twrp_init_stub.cpp
+        echo 'namespace android {' >> twrp_init_stub.cpp
+        echo 'namespace init {' >> twrp_init_stub.cpp
         echo '    void vendor_load_properties() {}' >> twrp_init_stub.cpp
+        echo '}' >> twrp_init_stub.cpp
         echo '}' >> twrp_init_stub.cpp
         
         # 重写设备树的 Android.bp
@@ -122,7 +124,7 @@ jobs:
         # 6. 执行编译
         lunch crux-eng
         make recoveryimage -j$(nproc --all)
-        
+
 
     - name: Upload Recovery Image
       uses: actions/upload-artifact@v4
