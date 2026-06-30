@@ -101,30 +101,26 @@ jobs:
             echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
         fi
         
-        # 5. 核心修复：将存根函数精准嵌入 android::init 命名空间，完美契合系统调用
-        echo '#include <vector>' > twrp_init_stub.cpp
-        echo '#include <string>' >> twrp_init_stub.cpp
-        echo 'namespace android {' >> twrp_init_stub.cpp
-        echo 'namespace init {' >> twrp_init_stub.cpp
-        echo '    void vendor_load_properties() {}' >> twrp_init_stub.cpp
-        echo '}' >> twrp_init_stub.cpp
-        echo '}' >> twrp_init_stub.cpp
+        # 5. 核心绝杀：直接往系统核心源码注入弱符号存根，就地解决未定义符号
+        # 我们不管它是 C 还是 C++ 寻找它，我们同时提供两个版本的空实现，直接塞进报错的源文件里！
+        cd ~/twrp
+        if [ -f "system/core/init/property_service.cpp" ]; then
+            echo "" >> system/core/init/property_service.cpp
+            echo "// TWRP compilation stub to fix undefined symbol error" >> system/core/init/property_service.cpp
+            echo "extern \"C\" { void vendor_load_properties() {} }" >> system/core/init/property_service.cpp
+            echo "namespace android { namespace init { void __attribute__((weak)) vendor_load_properties() {} } }" >> system/core/init/property_service.cpp
+        fi
         
-        # 重写设备树的 Android.bp
-        echo "" > Android.bp
-        echo "cc_library_static {" >> Android.bp
-        echo "    name: \"libinit_crux\"," >> Android.bp
-        echo "    recovery_available: true," >> Android.bp
-        echo "    srcs: [\"twrp_init_stub.cpp\"]," >> Android.bp
-        echo "    include_dirs: [\"system/core/init\"]," >> Android.bp
-        echo "}" >> Android.bp
+        # 清理掉之前可能在设备树残留的实验性 Android.bp 避免干扰
+        cd device/xiaomi/crux
+        git checkout -- Android.bp || true
+        rm -f twrp_init_stub.cpp || true
         
         cd ~/twrp
         
         # 6. 执行编译
         lunch crux-eng
         make recoveryimage -j$(nproc --all)
-
 
     - name: Upload Recovery Image
       uses: actions/upload-artifact@v4
