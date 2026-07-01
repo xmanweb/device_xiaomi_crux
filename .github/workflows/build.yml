@@ -101,24 +101,33 @@ jobs:
             echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
         fi
         
-        # 5. 核心绝杀：直接往系统核心源码注入弱符号存根，就地解决未定义符号
-        # 我们不管它是 C 还是 C++ 寻找它，我们同时提供两个版本的空实现，直接塞进报错的源文件里！
+        # 5. 精准狙击：清除 system/core/init/Android.bp 里的静态库依赖，但不破坏模块定义
         cd ~/twrp
+        if [ -f "system/core/init/Android.bp" ]; then
+            # 恢复干净的 Android.bp 状态
+            git checkout -- system/core/init/Android.bp || true
+            
+            # 精准删除：只删除引用的静态库整行（类似 "libinit_crux" 或 libinit_xx），保留 name: "..."
+            sed -i '/"libinit_/d' system/core/init/Android.bp
+        fi
+        
+        # 6. 核心埋伏：直接在系统核心源码中注入存根函数，彻底干掉 81% 处的链接未定义符号
         if [ -f "system/core/init/property_service.cpp" ]; then
+            sed -i '/TWRP compilation stub/,$d' system/core/init/property_service.cpp
+            
             echo "" >> system/core/init/property_service.cpp
             echo "// TWRP compilation stub to fix undefined symbol error" >> system/core/init/property_service.cpp
             echo "extern \"C\" { void vendor_load_properties() {} }" >> system/core/init/property_service.cpp
             echo "namespace android { namespace init { void __attribute__((weak)) vendor_load_properties() {} } }" >> system/core/init/property_service.cpp
         fi
         
-        # 清理掉之前可能在设备树残留的实验性 Android.bp 避免干扰
+        # 7. 清理设备树中不生效的 Android.bp 干扰
         cd device/xiaomi/crux
         git checkout -- Android.bp || true
-        rm -f twrp_init_stub.cpp || true
         
         cd ~/twrp
         
-        # 6. 执行编译
+        # 8. 执行编译
         lunch crux-eng
         make recoveryimage -j$(nproc --all)
 
