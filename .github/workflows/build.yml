@@ -1,10 +1,10 @@
 name: Build TWRP for Crux (Android 11.0)
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
   push:
     branches:
-      - android-11.0 # 当这个分支有代码推送时触发
+      - android-11.0
     paths-ignore:
       - 'README.md'
       - '.gitignore'
@@ -12,7 +12,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04 # 显式锁定为稳定高效的 Ubuntu 22.04，避开 20.04 排队和 24.04 编译器过新的坑
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
 
@@ -22,11 +22,10 @@ jobs:
 
     - name: Clean up disk space
       run: |
-        docker rmi $(docker images -q) || true
+        docker system prune -a -f || true
         sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
         sudo apt-get clean
 
-    # 锁定 Python 版本为 3.9，防止 Ubuntu 22.04 自带的 Python 3.10 导致 Android 11 脚本报错
     - name: Set up Python 3.9
       uses: actions/setup-python@v5
       with:
@@ -35,7 +34,6 @@ jobs:
     - name: Install Build Dependencies
       run: |
         sudo apt-get update
-        # 在 Ubuntu 22.04 下，这些依赖包均能被原生正常解析和安装
         sudo apt-get install -y gperf gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc bison build-essential ccache curl flex g++ gcc git gnupg gperf libffi-dev libncurses5 libncurses5-dev libreadline-dev libssl-dev libxml2 lzop make pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-11-jdk
 
     - name: Install Repo Tool
@@ -47,27 +45,19 @@ jobs:
 
     - name: Initialize Repo and Sync Source
       run: |
-        mkdir ~/twrp
+        mkdir -p ~/twrp
         cd ~/twrp
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         
-        # 使用 Minimal TWRP 11 仓库地址
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        
-        # 同步源码
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
     - name: Clone Device Tree
       run: |
         cd ~/twrp
-        # 1. 确保目标路径干净，防止嵌套
         rm -rf device/xiaomi/crux
-        mkdir -p device/xiaomi/crux
-        
-        # 2. 将设备树内容直接克隆到目标目录中（注意后面的点 . 表示当前目录）
-        cd device/xiaomi/crux
-        git clone https://github.com/xmanweb/device_xiaomi_crux.git -b android-11.0 .
+        git clone https://github.com/xmanweb/device_xiaomi_crux.git -b android-11.0 device/xiaomi/crux
 
     - name: Build Recovery Image
       run: |
@@ -75,58 +65,8 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # 1. 规范文件命名
-        cd device/xiaomi/crux
-        if [ ! -f "crux.mk" ]; then
-            ln -sf twrp_crux.mk crux.mk || ln -sf omni_crux.mk crux.mk || true
-        fi
-        
-        # 2. 地毯式清理 vendor 依赖
-        find . -name "*.mk" -exec sed -i '/vendor\/crux/d' {} +
-        find . -name "*.mk" -exec sed -i '/vendor\/lineage/d' {} +
-        
-        # 3. 强制重写 PRODUCT_NAME 为 crux，确保 lunch 精准匹配
-        find . -name "*.mk" -exec sed -i 's/PRODUCT_NAME :=.*/PRODUCT_NAME := crux/g' {} +
-        
-        # 4. 补齐完整的 AVB 签名及防回滚计数器
-        if [ -f "BoardConfig.mk" ]; then
-            sed -i '/BOARD_AVB_RECOVERY_KEY_PATH/d' BoardConfig.mk
-            sed -i '/BOARD_AVB_RECOVERY_ALGORITHM/d' BoardConfig.mk
-            sed -i '/BOARD_AVB_RECOVERY_ROLLBACK_INDEX/d' BoardConfig.mk
-            
-            echo "" >> BoardConfig.mk
-            echo "BOARD_AVB_RECOVERY_KEY_PATH := external/avb/test/data/testkey_rsa4096.pem" >> BoardConfig.mk
-            echo "BOARD_AVB_RECOVERY_ALGORITHM := SHA256_RSA4096" >> BoardConfig.mk
-            echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX := 0" >> BoardConfig.mk
-            echo "BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1" >> BoardConfig.mk
-        fi
-        
-        # 5. 彻底回滚清理之前对系统 init 目录污染的实验修改
-        cd ~/twrp
-        if [ -f "system/core/init/Android.bp" ]; then
-            git checkout -- system/core/init/Android.bp || true
-        fi
-        
-        # 6. 【重点】直接修改系统核心，既然你硬要找 //device/xiaomi/crux:libinit_crux，
-        # 我们用 sed 把 system/core/init/Android.bp 里的这一行依赖直接用原生通用的 "libinit" 替换掉！
-        if [ -f "system/core/init/Android.bp" ]; then
-            sed -i 's|"//device/xiaomi/crux:libinit_crux"|""|g' system/core/init/Android.bp
-        fi
-
-        # 7. 在核心源码中死守 81% 链接关卡（由于上面将其替换为了空，这里依然提供存根函数防止未定义符号）
-        if [ -f "system/core/init/property_service.cpp" ]; then
-            sed -i '/TWRP compilation stub/,$d' system/core/init/property_service.cpp
-            
-            echo "" >> system/core/init/property_service.cpp
-            echo "// TWRP compilation stub to fix undefined symbol error" >> system/core/init/property_service.cpp
-            echo "extern \"C\" { void vendor_load_properties() {} }" >> system/core/init/property_service.cpp
-            echo "namespace android { namespace init { void __attribute__((weak)) vendor_load_properties() {} } }" >> system/core/init/property_service.cpp
-        fi
-        
-        cd ~/twrp
-        
-        # 8. 执行编译
-        lunch crux-eng
+        # 使用标准的 TWRP 编译流程，避免硬编码修改系统核心库文件
+        lunch twrp_crux-eng || lunch omni_crux-eng || lunch crux-eng
         make recoveryimage -j$(nproc --all)
 
     - name: Upload Recovery Image
